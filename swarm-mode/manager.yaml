@@ -116,7 +116,7 @@ Resources:
     Properties:
       RetentionInDays: !Ref LogsRetentionInDays
 
-  SecurityGroup:
+  SwarmSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
       GroupDescription: !Sub ${AWS::StackName}
@@ -127,12 +127,53 @@ Resources:
     Type: 'AWS::EC2::SecurityGroupIngress'
     Condition: HasSSHBastionSecurityGroup
     Properties:
-      GroupId: !Ref SecurityGroup
+      GroupId: !Ref SwarmSecurityGroup
       IpProtocol: tcp
       FromPort: 22
       ToPort: 22
       SourceSecurityGroupId:
         'Fn::ImportValue': !Sub '${ParentSSHBastionStack}-SecurityGroup'
+
+  SecurityGroupInClusterMgmt:
+    Type: 'AWS::EC2::SecurityGroupIngress'
+    Condition: HasSSHBastionSecurityGroup
+    Properties:
+      GroupId: !Ref SwarmSecurityGroup
+      IpProtocol: tcp
+      FromPort: 2377
+      ToPort: 2377
+      SourceSecurityGroupId: !Ref SwarmSecurityGroup
+
+  SecurityGroupInSwarmCommunicationTcp:
+    Type: 'AWS::EC2::SecurityGroupIngress'
+    Condition: HasSSHBastionSecurityGroup
+    Properties:
+      GroupId: !Ref SwarmSecurityGroup
+      IpProtocol: tcp
+      FromPort: 7946
+      ToPort: 7946
+      SourceSecurityGroupId: !Ref SwarmSecurityGroup
+
+  SecurityGroupInSwarmCommunicationUdp:
+    Type: 'AWS::EC2::SecurityGroupIngress'
+    Condition: HasSSHBastionSecurityGroup
+    Properties:
+      GroupId: !Ref SwarmSecurityGroup
+      IpProtocol: udp
+      FromPort: 7946
+      ToPort: 7946
+      SourceSecurityGroupId: !Ref SwarmSecurityGroup
+
+  SecurityGroupInSwarmOverlayNetwork:
+    Type: 'AWS::EC2::SecurityGroupIngress'
+    Condition: HasSSHBastionSecurityGroup
+    Properties:
+      GroupId: !Ref SwarmSecurityGroup
+      IpProtocol: udp
+      FromPort: 4789
+      ToPort: 4789
+      SourceSecurityGroupId: !Ref SwarmSecurityGroup
+
 
   InstanceProfile:
     Type: 'AWS::IAM::InstanceProfile'
@@ -229,7 +270,7 @@ Resources:
       AutoScalingRollingUpdate:
         MinInstancesInService: !Ref DesiredInstances
         MaxBatchSize: '1'
-        PauseTime: PT15M
+        PauseTime: PT10M
         SuspendProcesses:
         - AlarmNotification
         WaitOnResourceSignals: 'true'
@@ -426,35 +467,49 @@ Resources:
               command: 'docker run hello-world'
         swarm:
           commands:
-            # 'a_install_awscli':
-            #   command: 'sudo apt-get install awscli'
-          
             'a_join_swarm':
-              command: |
-                if [ "${SwarmManagerJoinToken}" == '' ] ; then
-                    exit;
-                fi
+              command: !Sub | 
 
-                INSTANCE_ID="`wget -q -O - http://instance-data/latest/meta-data/instance-id`"
-                AG_NAME=$(aws autoscaling describe-auto-scaling-instances --instance-ids ${!INSTANCE_ID} --region eu-west-1 --query AutoScalingInstances[].AutoScalingGroupName --output text)
+                if [ ! -z "${SwarmManagerJoinToken}" ] ; then
+                  docker swarm init
 
-                for ID in $(aws autoscaling describe-auto-scaling-groups --auto-scaling-group-names ${!AG_NAME} --region eu-west-1 --query AutoScalingGroups[].Instances[].InstanceId --output text);
-                do
-                    if [ "${!ID}" == ${!INSTANCE_ID} ] ; then
+                else
+                  INSTANCE_ID="`wget -q -O - http://instance-data/latest/meta-data/instance-id`"
+                  AG_NAME=$(aws autoscaling describe-auto-scaling-instances --instance-ids $INSTANCE_ID --region eu-west-1 --query AutoScalingInstances[].AutoScalingGroupName --output text)
+
+                  echo $INSTANCE_ID
+                  echo $AG_NAME
+
+                  for ID in $(aws autoscaling describe-auto-scaling-groups --auto-scaling-group-names $AG_NAME --region eu-west-1 --query AutoScalingGroups[].Instances[].InstanceId --output text);
+                  do
+                    # Ignore "myself"
+                    if [ "$ID" = "$INSTANCE_ID" ] ; then
                         continue;
                     fi
-                    IP=$(aws ec2 describe-instances --instance-ids $ID --region eu-west-1 --query Reservations[].Instances[].PrivateIpAddress --output text)
-                done
 
-                docker swarm join --token ${SwarmManagerJoinToken} ${!IP}:2377
-                
+                    IP=$(aws ec2 describe-instances --instance-ids $ID --region eu-west-1 --query Reservations[].Instances[].PrivateIpAddress --output text)
+                    if [ ! -z "$IP" ] ; then
+                      echo "Try to join swarm with IP $IP"
+
+                      # Join the swarm; if it fails try the next one
+                      docker swarm join --token ${SwarmManagerJoinToken} $IP:2377 && echo break || echo continue
+                    fi
+                  done
+                fi
+
+            'b_swarm_healthcheck':
+              command: !Sub |
+                if [ ! -z "${SwarmManagerJoinToken}" ] ; then
+                  docker node ls
+                fi
+
 
     Properties:
       # ImageId: !FindInMap [RegionMap, !Ref 'AWS::Region', AMI]
       ImageId: ami-6f587e1c # Use Ubuntu to install latest docker-engine
       InstanceType: !Ref InstanceType
       SecurityGroups:
-      - !Ref SecurityGroup
+      - !Ref SwarmSecurityGroup
 
       IamInstanceProfile: !Ref InstanceProfile
       KeyName: !If [HasKeyName, !Ref KeyName, !Ref 'AWS::NoValue']
@@ -468,10 +523,15 @@ Resources:
           sudo apt-get update
           sudo apt-get -y upgrade
 
+          # Install AWSCli
+          sudo apt install -y awscli
+
           # Install cfn-init for Ubuntu
           apt-get -y install python-setuptools
           easy_install https://s3.amazonaws.com/cloudformation-examples/aws-cfn-bootstrap-latest.tar.gz
           ln -s /root/aws-cfn-bootstrap-latest/init/ubuntu/cfn-hup /etc/init.d/cfn-hup
+
+          echo "20"
 
           cfn-init -v --region ${AWS::Region} --stack ${AWS::StackName} --resource SwarmManagerLaunchConfiguration 
           cfn-signal -e $? --region ${AWS::Region} --stack ${AWS::StackName} --resource SwarmManagerAutoScalingGroup
