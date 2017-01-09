@@ -31,7 +31,7 @@ aws cloudformation create-stack  \
   --template-body file://./swarm-mode/manager.yaml \
   --stack-name swarm-manager \
   --capabilities CAPABILITY_IAM \
-  --parameters ParameterKey=ParentVPCStack,ParameterValue=vpc ParameterKey=ParentSSHBastionStack,ParameterValue=vpc-ssh-bastion ParameterKey=KeyName,ParameterValue=pgarbe ParameterKey=DockerVersion,ParameterValue=1.13.0~rc4 ParameterKey=DockerPreRelease,ParameterValue=true ParameterKey=DesiredInstances,ParameterValue=1
+  --parameters ParameterKey=ParentVPCStack,ParameterValue=vpc ParameterKey=ParentSSHBastionStack,ParameterValue=vpc-ssh-bastion ParameterKey=KeyName,ParameterValue=pgarbe ParameterKey=DockerVersion,ParameterValue=1.13.0~rc5 ParameterKey=DockerPreRelease,ParameterValue=true ParameterKey=DesiredInstances,ParameterValue=1
 
 # ssh into node via bastion host
 ssh -A ec2-user@<IP of bastion host>
@@ -54,7 +54,7 @@ aws cloudformation update-stack  \
   --template-body file://./swarm-mode/manager.yaml \
   --stack-name swarm-manager \
   --capabilities CAPABILITY_IAM \
-  --parameters ParameterKey=ParentVPCStack,ParameterValue=vpc ParameterKey=ParentSSHBastionStack,ParameterValue=vpc-ssh-bastion ParameterKey=KeyName,ParameterValue=pgarbe ParameterKey=DockerVersion,ParameterValue=1.13.0~rc4 ParameterKey=DockerPreRelease,ParameterValue=true ParameterKey=DesiredInstances,ParameterValue=3 ParameterKey=SwarmManagerJoinToken,ParameterValue={KmsEncryptedManagerToken}
+  --parameters ParameterKey=ParentVPCStack,ParameterValue=vpc ParameterKey=ParentSSHBastionStack,ParameterValue=vpc-ssh-bastion ParameterKey=KeyName,ParameterValue=pgarbe ParameterKey=DockerVersion,ParameterValue=1.13.0~rc5 ParameterKey=DockerPreRelease,ParameterValue=true ParameterKey=DesiredInstances,ParameterValue=3 ParameterKey=SwarmManagerJoinToken,ParameterValue={KmsEncryptedManagerToken}
 ```
 
 
