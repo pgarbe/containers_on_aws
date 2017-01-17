@@ -14,11 +14,35 @@ aws cloudformation create-stack \
   --template-body https://s3-eu-west-1.amazonaws.com/widdix-aws-cf-templates/vpc/vpc-3azs.yaml
 
 # Create bastion host for ssh access
-aws cloudformation create-stack \
+aws cloudformation update-stack \
   --stack-name vpc-ssh-bastion \
   --template-body https://s3-eu-west-1.amazonaws.com/widdix-aws-cf-templates/vpc/vpc-ssh-bastion.yaml \
   --capabilities CAPABILITY_IAM \
   --parameters ParameterKey=ParentVPCStack,ParameterValue=vpc ParameterKey=KeyName,ParameterValue=pgarbe
+
+# Create NAT gateway
+aws cloudformation create-stack \
+  --stack-name vpc-nat-instance \
+  --template-body https://s3-eu-west-1.amazonaws.com/widdix-aws-cf-templates/vpc/vpc-nat-instance.yaml \
+  --capabilities CAPABILITY_IAM \
+  --parameters ParameterKey=ParentVPCStack,ParameterValue=vpc \
+               ParameterKey=ParentSSHBastionStack,ParameterValue=vpc-ssh-bastion \
+               ParameterKey=KeyName,ParameterValue=pgarbe
+```
+
+## Single Docker (Ubuntu)
+
+```bash
+aws cloudformation create-stack  \
+  --template-body file://./ubuntu/stack.yaml \
+  --stack-name docker \
+  --capabilities CAPABILITY_IAM \
+  --parameters ParameterKey=ParentVPCStack,ParameterValue=vpc \
+               ParameterKey=ParentSSHBastionStack,ParameterValue=vpc-ssh-bastion \
+               ParameterKey=KeyName,ParameterValue=pgarbe \
+               ParameterKey=DockerVersion,ParameterValue=1.13.0~rc6 \
+               ParameterKey=DockerPreRelease,ParameterValue=true \
+               ParameterKey=DesiredInstances,ParameterValue=1
 ```
 
 
