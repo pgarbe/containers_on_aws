@@ -35,15 +35,10 @@ Parameters:
     AllowedValues:
     - Public
     - Private
-  LogsRetentionInDays:
-    Description: 'Specifies the number of days you want to retain log events.'
-    Type: Number
-    Default: 14
-    AllowedValues: [1, 3, 5, 7, 14, 30, 60, 90, 120, 150, 180, 365, 400, 545, 731, 1827, 3653]
   DockerVersion:
     Description: 'Specifies the version of the Docker engine'
     Type: String
-    Default: "1.12.6"
+    Default: "1.13.0"
   DockerPreRelease:
     Description: 'Specifies if an experimental version of Docker Engine should be used'
     Type: String
@@ -59,11 +54,6 @@ Conditions:
   UsePreRelease: !Equals [!Ref DockerPreRelease, 'true']
 
 Resources:
-
-  Logs:
-    Type: 'AWS::Logs::LogGroup'
-    Properties:
-      RetentionInDays: !Ref LogsRetentionInDays
 
   SecurityGroup:
     Type: AWS::EC2::SecurityGroup
@@ -104,18 +94,6 @@ Resources:
           - 'sts:AssumeRole'
       Path: '/'
       Policies:
-      - PolicyName: logs
-        PolicyDocument:
-          Version: '2012-10-17'
-          Statement:
-          - Effect: Allow
-            Action:
-            - 'logs:CreateLogGroup'
-            - 'logs:CreateLogStream'
-            - 'logs:PutLogEvents'
-            - 'logs:DescribeLogStreams'
-            Resource:
-            - 'arn:aws:logs:*:*:*'
       - PolicyName: asg
         PolicyDocument:
           Version: '2012-10-17'
@@ -253,110 +231,12 @@ Resources:
                 commands:
                 - 'a_configure_sshd_command'
                 - 'b_configure_sshd_commanduser'
-        config:
-          packages:
-            yum:
-              awslogs: []
-          files:
-            '/etc/awslogs/awscli.conf':
-              content: !Sub |
-                [default]
-                region = ${AWS::Region}
-                [plugins]
-                cwlogs = cwlogs
-              mode: '000644'
-              owner: root
-              group: root
-            '/etc/awslogs/awslogs.conf':
-              content: !Sub |
-                [general]
-                state_file = /var/lib/awslogs/agent-state
-                [/var/log/messages]
-                datetime_format = %b %d %H:%M:%S
-                file = /var/log/messages
-                log_stream_name = {instance_id}/var/log/messages
-                log_group_name = ${Logs}
-                [/var/log/secure]
-                datetime_format = %b %d %H:%M:%S
-                file = /var/log/secure
-                log_stream_name = {instance_id}/var/log/secure
-                log_group_name = ${Logs}
-                [/var/log/cron]
-                datetime_format = %b %d %H:%M:%S
-                file = /var/log/cron
-                log_stream_name = {instance_id}/var/log/cron
-                log_group_name = ${Logs}
-                [/var/log/cloud-init.log]
-                datetime_format = %b %d %H:%M:%S
-                file = /var/log/cloud-init.log
-                log_stream_name = {instance_id}/var/log/cloud-init.log
-                log_group_name = ${Logs}
-                [/var/log/cfn-init.log]
-                datetime_format = %Y-%m-%d %H:%M:%S
-                file = /var/log/cfn-init.log
-                log_stream_name = {instance_id}/var/log/cfn-init.log
-                log_group_name = ${Logs}
-                [/var/log/cfn-hup.log]
-                datetime_format = %Y-%m-%d %H:%M:%S
-                file = /var/log/cfn-hup.log
-                log_stream_name = {instance_id}/var/log/cfn-hup.log
-                log_group_name = ${Logs}
-                [/var/log/cfn-init-cmd.log]
-                datetime_format = %Y-%m-%d %H:%M:%S
-                file = /var/log/cfn-init-cmd.log
-                log_stream_name = {instance_id}/var/log/cfn-init-cmd.log
-                log_group_name = ${Logs}
-                [/var/log/cloud-init-output.log]
-                file = /var/log/cloud-init-output.log
-                log_stream_name = {instance_id}/var/log/cloud-init-output.log
-                log_group_name = ${Logs}
-                [/var/log/dmesg]
-                file = /var/log/dmesg
-                log_stream_name = {instance_id}/var/log/dmesg
-                log_group_name = ${Logs}
-              mode: '000644'
-              owner: root
-              group: root
-            '/etc/cfn/cfn-hup.conf':
-              content: !Sub |
-                [main]
-                stack=${AWS::StackId}
-                region=${AWS::Region}
-                interval=1
-              mode: '000400'
-              owner: root
-              group: root
-            '/etc/cfn/hooks.d/cfn-auto-reloader.conf':
-              content: !Sub |
-                [cfn-auto-reloader-hook]
-                triggers=post.update
-                path=Resources.VirtualMachine.Metadata.AWS::CloudFormation::Init
-                action=/opt/aws/bin/cfn-init --verbose --stack=${AWS::StackName} --region=${AWS::Region} --resource=VirtualMachine
-                runas=root
-          services:
-            sysvinit:
-              awslogs:
-                enabled: true
-                ensureRunning: true
-                packages:
-                  yum:
-                  - awslogs
-                files:
-                - '/etc/awslogs/awslogs.conf'
-                - '/etc/awslogs/awscli.conf'
-              cfn-hup:
-                enabled: true
-                ensureRunning: true
-                files:
-                - '/etc/cfn/cfn-hup.conf'
-                - '/etc/cfn/hooks.d/cfn-auto-reloader.conf'
-
 
 
         docker:
           commands:
             'a_get_certificates':
-              command: 'sudo apt-get install apt-transport-https ca-certificates'
+              command: 'sudo apt-get install -y apt-transport-https ca-certificates'
             'b_set_gpg_key':
               command: 'sudo apt-key adv --keyserver hkp://ha.pool.sks-keyservers.net:80 --recv-keys 58118E89F3A912897C070ADBF76221572C52609D'
             'c_add_docker_repo':
@@ -371,6 +251,9 @@ Resources:
               command: 'sudo usermod -aG docker ubuntu'
             'h_verify_installation':
               command: 'docker run hello-world'
+            # Optional
+            # 'i_run_your_container':
+            #   command: 'docker run -d -p 80:80 --name nginx nginx'
 
     Properties:
       ImageId: ami-6f587e1c # Ubuntu 16.04

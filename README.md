@@ -58,10 +58,10 @@ aws cloudformation create-stack  \
   --parameters ParameterKey=ParentVPCStack,ParameterValue=vpc ParameterKey=ParentSSHBastionStack,ParameterValue=vpc-ssh-bastion ParameterKey=KeyName,ParameterValue=pgarbe ParameterKey=DockerVersion,ParameterValue=1.13.0~rc5 ParameterKey=DockerPreRelease,ParameterValue=true ParameterKey=DesiredInstances,ParameterValue=1
 
 # ssh into node via bastion host
-ssh -A ec2-user@<IP of bastion host>
+ssh -A ec2-user@<Public IP of bastion host>
 
-# ssh into node via bastion host
-ssh ubuntu@<IP of manager node>
+# ssh into node 
+ssh ubuntu@<Private IP of manager node>
 
 # Initialize swarm cluster
 docker swarm init
