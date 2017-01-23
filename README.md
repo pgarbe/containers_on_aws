@@ -45,6 +45,9 @@ aws cloudformation create-stack  \
                ParameterKey=DesiredInstances,ParameterValue=1
 ```
 
+```bash
+docker run -d -p 80:80 --name nginx nginx
+```
 
 ## Docker Swarm (mode)
 To create a Docker swarm (mode) you need to setup managers and workers. A swarm cluster can be initialized by `docker swarm init` and further nodes can be joined by `docker swarm join`. In order to join nodes we've to provide a so-called join-token. This can be requested on the first node by `docker swarm join-token worker|manager`. 
@@ -55,7 +58,7 @@ aws cloudformation create-stack  \
   --template-body file://./swarm-mode/manager.yaml \
   --stack-name swarm-manager \
   --capabilities CAPABILITY_IAM \
-  --parameters ParameterKey=ParentVPCStack,ParameterValue=vpc ParameterKey=ParentSSHBastionStack,ParameterValue=vpc-ssh-bastion ParameterKey=KeyName,ParameterValue=pgarbe ParameterKey=DockerVersion,ParameterValue=1.13.0~rc5 ParameterKey=DockerPreRelease,ParameterValue=true ParameterKey=DesiredInstances,ParameterValue=1
+  --parameters ParameterKey=ParentVPCStack,ParameterValue=vpc ParameterKey=ParentSSHBastionStack,ParameterValue=vpc-ssh-bastion ParameterKey=KeyName,ParameterValue=pgarbe ParameterKey=DesiredInstances,ParameterValue=1
 
 # ssh into node via bastion host
 ssh -A ec2-user@<Public IP of bastion host>
@@ -78,12 +81,70 @@ aws cloudformation update-stack  \
   --template-body file://./swarm-mode/manager.yaml \
   --stack-name swarm-manager \
   --capabilities CAPABILITY_IAM \
-  --parameters ParameterKey=ParentVPCStack,ParameterValue=vpc ParameterKey=ParentSSHBastionStack,ParameterValue=vpc-ssh-bastion ParameterKey=KeyName,ParameterValue=pgarbe ParameterKey=DockerVersion,ParameterValue=1.13.0~rc5 ParameterKey=DockerPreRelease,ParameterValue=true ParameterKey=DesiredInstances,ParameterValue=3 ParameterKey=SwarmManagerJoinToken,ParameterValue={KmsEncryptedManagerToken}
+  --parameters ParameterKey=ParentVPCStack,ParameterValue=vpc \
+              ParameterKey=ParentSSHBastionStack,ParameterValue=vpc-ssh-bastion \
+              ParameterKey=KeyName,ParameterValue=pgarbe \
+              ParameterKey=DesiredInstances,ParameterValue=3 \
+              ParameterKey=SwarmManagerJoinToken,ParameterValue=SWMTKN-1-26eprvszwm6dmk1gkjxdzryn3r1die1fkggq98z5zbwa30sr04-3nz10nx40dy8tr144eq2wtkqe
+
+# Add some workers
+aws cloudformation create-stack  \
+  --template-body file://./swarm-mode/worker.yaml \
+  --stack-name swarm-worker \
+  --capabilities CAPABILITY_IAM \
+  --parameters ParameterKey=ParentVPCStack,ParameterValue=vpc \
+               ParameterKey=ParentSSHBastionStack,ParameterValue=vpc-ssh-bastion \
+               ParameterKey=KeyName,ParameterValue=pgarbe \
+               ParameterKey=DesiredInstances,ParameterValue=3 \
+               ParameterKey=ParentSwarmStack,ParameterValue=swarm-manager \
+               ParameterKey=SwarmWorkerJoinToken,ParameterValue=SWMTKN-1-26eprvszwm6dmk1gkjxdzryn3r1die1fkggq98z5zbwa30sr04-5oiajhi9bm5tdi21udbz89nci
+
+
 ```
 
 
+
 ## Docker for AWS
-tbd
+[Docker for AWS](https://www.docker.com/products/docker#/AWS) provides an easy-to-deploy Docker environment on AWS. The installation is very easy and takes only a couple of minutes.
+
+```bash
+aws cloudformation create-stack  \
+  --template-url https://editions-us-east-1.s3.amazonaws.com/aws/stable/Docker.tmpl \
+  --stack-name docker4aws113 \
+  --capabilities CAPABILITY_IAM \
+  --parameters ParameterKey=ClusterSize,ParameterValue=5 \
+               ParameterKey=EnableCloudWatchLogs,ParameterValue=yes \
+               ParameterKey=EnableSystemPrune,ParameterValue=no \
+               ParameterKey=InstanceType,ParameterValue=t2.micro \
+               ParameterKey=KeyName,ParameterValue=pgarbe \
+               ParameterKey=ManagerDiskSize,ParameterValue=20 \
+               ParameterKey=ManagerDiskType,ParameterValue=standard \
+               ParameterKey=ManagerInstanceType,ParameterValue=t2.micro \
+               ParameterKey=ManagerSize,ParameterValue=3 \
+               ParameterKey=WorkerDiskSize,ParameterValue=20 \
+               ParameterKey=WorkerDiskType,ParameterValue=standard
+```
+
+Get the public IP from one of the manager nodes.
+
+```bash
+ssh docker@<Public IP of manager node>
+```
+
+Deploy a service
+
+```bash
+docker service create \
+  --name=viz \
+  --publish=8080:8080/tcp \
+  --constraint=node.role==manager \
+  --mount=type=bind,src=/var/run/docker.sock,dst=/var/run/docker.sock \
+  manomarks/visualizer
+
+docker service create --publish 80:80 --name nginx nginx
+
+
+```
 
 ## ECS
 tbd
