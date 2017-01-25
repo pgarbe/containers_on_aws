@@ -45,6 +45,7 @@ aws cloudformation create-stack  \
                ParameterKey=DesiredInstances,ParameterValue=1
 ```
 
+#### Deploy a service
 ```bash
 docker run -d -p 80:80 --name nginx nginx
 ```
@@ -58,16 +59,16 @@ aws cloudformation create-stack  \
   --template-body file://./swarm-mode/manager.yaml \
   --stack-name swarm-manager \
   --capabilities CAPABILITY_IAM \
-  --parameters ParameterKey=ParentVPCStack,ParameterValue=vpc ParameterKey=ParentSSHBastionStack,ParameterValue=vpc-ssh-bastion ParameterKey=KeyName,ParameterValue=pgarbe ParameterKey=DesiredInstances,ParameterValue=1
+  --parameters ParameterKey=ParentVPCStack,ParameterValue=vpc \
+               ParameterKey=ParentSSHBastionStack,ParameterValue=vpc-ssh-bastion \
+               ParameterKey=KeyName,ParameterValue=pgarbe \
+               ParameterKey=DesiredInstances,ParameterValue=1
 
 # ssh into node via bastion host
 ssh -A ec2-user@<Public IP of bastion host>
 
 # ssh into node 
 ssh ubuntu@<Private IP of manager node>
-
-# Initialize swarm cluster
-docker swarm init
 
 # Get the swarm join tokens and copy them
 docker swarm join-token manager --quiet
@@ -131,7 +132,7 @@ Get the public IP from one of the manager nodes.
 ssh docker@<Public IP of manager node>
 ```
 
-Deploy a service
+#### Deploy a service
 
 ```bash
 docker service create \
@@ -148,3 +149,24 @@ docker service create --publish 80:80 --name nginx nginx
 
 ## ECS
 tbd
+
+```bash
+aws cloudformation create-stack  \
+  --template-body file://./ecs/cluster.yaml \
+  --stack-name ecs-cluster \
+  --capabilities CAPABILITY_IAM \
+  --parameters ParameterKey=ParentVPCStack,ParameterValue=vpc \
+               ParameterKey=ParentSSHBastionStack,ParameterValue=vpc-ssh-bastion \
+               ParameterKey=KeyName,ParameterValue=pgarbe \
+               ParameterKey=DesiredInstances,ParameterValue=3
+
+
+aws cloudformation create-stack  \
+  --template-body file://./ecs/service.yaml \
+  --stack-name ecs-service \
+  --capabilities CAPABILITY_NAMED_IAM \
+  --parameters ParameterKey=ParentVPCStack,ParameterValue=vpc \
+               ParameterKey=ParentECSStack,ParameterValue=ecs-cluster \
+               ParameterKey=DesiredInstances,ParameterValue=2
+
+```

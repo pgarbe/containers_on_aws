@@ -288,7 +288,7 @@ Resources:
                     fi
                   done
               - ASG: 
-                  'Fn::ImportValue': !Sub '${ParentSwarmStack}-SwarmWorkerAutoScalingGroup'
+                  'Fn::ImportValue': !Sub '${ParentSwarmStack}-SwarmManagerAutoScalingGroup'
 
             'b_swarm_healthcheck':
               command: '[ -n "$(docker info --format "{{.Swarm.NodeID}}")" ]'
@@ -320,7 +320,7 @@ Resources:
           easy_install https://s3.amazonaws.com/cloudformation-examples/aws-cfn-bootstrap-latest.tar.gz
           ln -s /root/aws-cfn-bootstrap-latest/init/ubuntu/cfn-hup /etc/init.d/cfn-hup
 
-          echo "21"
+          echo "22"
 
           cfn-init -v --region ${AWS::Region} --stack ${AWS::StackName} --resource SwarmWorkerLaunchConfiguration 
           cfn-signal -e $? --region ${AWS::Region} --stack ${AWS::StackName} --resource SwarmWorkerAutoScalingGroup
