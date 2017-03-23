@@ -55,14 +55,8 @@ To create a Docker swarm (mode) you need to setup managers and workers. A swarm 
 
 
 ```bash
-aws cloudformation create-stack  \
-  --template-body file://./swarm-mode/manager.yaml \
-  --stack-name swarm-manager \
-  --capabilities CAPABILITY_IAM \
-  --parameters ParameterKey=ParentVPCStack,ParameterValue=vpc \
-               ParameterKey=ParentSSHBastionStack,ParameterValue=vpc-ssh-bastion \
-               ParameterKey=KeyName,ParameterValue=pgarbe \
-               ParameterKey=DesiredInstances,ParameterValue=1
+./deploy.sh ParameterKey=KeyName,ParameterValue=pgarbe \
+            ParameterKey=Version,ParameterValue=$(date +%s) 
 
 # ssh into node via bastion host
 ssh -A ec2-user@<Public IP of bastion host>
@@ -75,34 +69,19 @@ docker swarm join-token manager --quiet
 docker swarm join-token worker --quiet
 
 # Encrypt tokens with KMS
-tbd
+swarm_manager_join_token=$(aws kms encrypt --key-id <KmsKey> --plaintext <SwarmManagerJoinToken> --output text --query CiphertextBlob)
+swarm_worker_join_token=$(aws kms encrypt --key-id <KmsKey> --plaintext <SwarmWorkerJoinToken> --output text --query CiphertextBlob)
 
-# Update stack to create more manager nodes
-aws cloudformation update-stack  \
-  --template-body file://./swarm-mode/manager.yaml \
-  --stack-name swarm-manager \
-  --capabilities CAPABILITY_IAM \
-  --parameters ParameterKey=ParentVPCStack,ParameterValue=vpc \
-              ParameterKey=ParentSSHBastionStack,ParameterValue=vpc-ssh-bastion \
-              ParameterKey=KeyName,ParameterValue=pgarbe \
-              ParameterKey=DesiredInstances,ParameterValue=3 \
-              ParameterKey=SwarmManagerJoinToken,ParameterValue=SWMTKN-1-26eprvszwm6dmk1gkjxdzryn3r1die1fkggq98z5zbwa30sr04-3nz10nx40dy8tr144eq2wtkqe
-
-# Add some workers
-aws cloudformation create-stack  \
-  --template-body file://./swarm-mode/worker.yaml \
-  --stack-name swarm-worker \
-  --capabilities CAPABILITY_IAM \
-  --parameters ParameterKey=ParentVPCStack,ParameterValue=vpc \
-               ParameterKey=ParentSSHBastionStack,ParameterValue=vpc-ssh-bastion \
-               ParameterKey=KeyName,ParameterValue=pgarbe \
-               ParameterKey=DesiredInstances,ParameterValue=3 \
-               ParameterKey=ParentSwarmStack,ParameterValue=swarm-manager \
-               ParameterKey=SwarmWorkerJoinToken,ParameterValue=SWMTKN-1-26eprvszwm6dmk1gkjxdzryn3r1die1fkggq98z5zbwa30sr04-5oiajhi9bm5tdi21udbz89nci
-
-
+./deploy.sh ParameterKey=KeyName,ParameterValue=pgarbe \
+            ParameterKey=Version,ParameterValue=$(date +%s)  \
+            ParameterKey=SwarmManagerJoinToken,ParameterValue=$swarm_manager_join_token \
+            ParameterKey=SwarmWorkerJoinToken,ParameterValue=$swarm_worker_join_token
 ```
 
+#### Deploy a service
+```bash
+docker stack deploy --compose-file docker-stack.yaml voting-app
+```
 
 
 ## Docker for AWS

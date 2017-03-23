@@ -1,36 +1,18 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Description: 'Docker 1.13 - Swarm Manager'
+Description: 'Docker Swarm - Manager'
 
-
-Metadata:
-  'AWS::CloudFormation::Interface':
-    ParameterGroups:
-    - Label:
-        default: 'Parent Stacks'
-      Parameters:
-      - ParentVPCStack
-      - ParentSSHBastionStack
-    - Label:
-        default: 'EC2 Parameters'
-      Parameters:
-      - InstanceType
-      - Name
-      - SubnetName
-      - KeyName
-      - IAMUserSSHAccess
 
 Parameters:
+
   ParentVPCStack:
     Description: 'Stack name of parent VPC stack based on vpc/vpc-*azs.yaml template.'
     Type: String
-  ParentSSHBastionStack:
-    Description: 'Optional Stack name of parent SSH bastion host/instance stack based on vpc/vpc-ssh-bastion.yaml template.'
-    Type: String
-    Default: ''
+
   KeyName:
     Description: 'Optional key pair of the ec2-user to establish a SSH connection to the EC2 instance.'
     Type: String
     Default: ''
+
   IAMUserSSHAccess:
     Description: 'Synchronize public keys of IAM users to enable personalized SSH access (Doc: https://cloudonaut.io/manage-aws-ec2-ssh-access-with-iam/).'
     Type: String
@@ -38,15 +20,18 @@ Parameters:
     AllowedValues:
     - true
     - false
+
   InstanceType:
     Description: 'The instance type for the EC2 instance.'
     Type: String
     Default: 't2.micro'
+
   DesiredInstances:
     Description: 'The number of manager nodes'
     Type: Number
     Default: 1
     AllowedValues: [1,3,5,7]
+
   ManagerSubnetsReach:
     Description: 'Should the managers have direct access to the Internet or do you prefer private subnets with NAT?'
     Type: String
@@ -54,168 +39,51 @@ Parameters:
     AllowedValues:
     - Public
     - Private
+
+  SecurityGroups:
+    Description: Security group for which are allowed to talk to ASG
+    Type: CommaDelimitedList
+
+  TargetGroups:
+    Description: Security group for which are allowed to talk to ASG
+    Type: CommaDelimitedList
+    Default: ''
+
   DockerVersion:
     Description: 'Specifies the version of the Docker engine'
     Type: String
-    Default: "1.13.0"
-  DockerPreRelease:
-    Description: 'Specifies if an experimental version of Docker Engine should be used'
+    Default: "17.03.0"
+
+  DockerRepository:
+    Description: 'Specifies if stable or edge repository should be used'
     Type: String
-    Default: false
+    Default: stable
     AllowedValues:
-    - true
-    - false
-  SwarmManagerJoinToken:
+    - stable
+    - edge
+
+  JoinToken:
     Description: 'The token to join the swarm cluster as a manager node'
     Type: String
     Default: ''
     NoEcho: true
 
+  JoinTokenKmsKey:
+    Description: 'KMS key to decrypt swarm join tokens'
+    Type: String
+
+  Version:
+    Description: 'Specifiy version to trigger a re-deployment of launch configuration'
+    Type: String
+
 Conditions:
+
   HasKeyName: !Not [!Equals [!Ref KeyName, '']]
   HasIAMUserSSHAccess: !Equals [!Ref IAMUserSSHAccess, 'true']
-  HasSSHBastionSecurityGroup: !Not [!Equals [!Ref ParentSSHBastionStack, '']]
-  UsePreRelease: !Equals [!Ref DockerPreRelease, 'true']
-  HasSwarmJoinToken: !Not [!Equals [!Ref SwarmManagerJoinToken, '']]
+  HasSwarmJoinToken: !Not [!Equals [!Ref JoinToken, '']]
+
 
 Resources:
-
-  SecurityGroup:
-    Type: AWS::EC2::SecurityGroup		
-    Properties:
-      GroupDescription: Allow http to client host
-      VpcId:
-        'Fn::ImportValue': !Sub '${ParentVPCStack}-VPC'
-      SecurityGroupIngress:
-      - IpProtocol: tcp		
-        FromPort: '80'
-        ToPort: '80'
-        CidrIp: 0.0.0.0/0
-      - IpProtocol: tcp
-        FromPort: '8080'
-        ToPort: '8080'
-        CidrIp: 0.0.0.0/0
-
-  LoadBalancer:
-    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
-    Properties:
-      Scheme: internet-facing
-      Subnets:
-      - 'Fn::ImportValue': !Sub '${ParentVPCStack}-SubnetAPublic'
-      - 'Fn::ImportValue': !Sub '${ParentVPCStack}-SubnetBPublic'
-      - 'Fn::ImportValue': !Sub '${ParentVPCStack}-SubnetCPublic'
-      SecurityGroups:
-      - !Ref SecurityGroup
-
-  Listener80:
-    Type: AWS::ElasticLoadBalancingV2::Listener
-    Properties:
-      DefaultActions:
-      - Type: forward		
-        TargetGroupArn: !Ref TargetGroup80
-      LoadBalancerArn: !Ref LoadBalancer
-      Port: '80'
-      Protocol: HTTP
-
-  TargetGroup80:
-    Type: AWS::ElasticLoadBalancingV2::TargetGroup
-    Properties:
-      HealthCheckIntervalSeconds: 5
-      HealthCheckProtocol: HTTP
-      HealthCheckTimeoutSeconds: 3
-      HealthCheckPath: "/"
-      HealthyThresholdCount: 4
-      Matcher:
-        HttpCode: '200'
-      Port: 80
-      Protocol: HTTP
-      Targets: []
-      UnhealthyThresholdCount: 3
-      VpcId:
-        'Fn::ImportValue': !Sub '${ParentVPCStack}-VPC'
-
-  Listener8080:
-    Type: AWS::ElasticLoadBalancingV2::Listener
-    Properties:
-      DefaultActions:
-      - Type: forward
-        TargetGroupArn: !Ref TargetGroup8080
-      LoadBalancerArn: !Ref LoadBalancer
-      Port: '8080'
-      Protocol: HTTP
-
-  TargetGroup8080:
-    Type: AWS::ElasticLoadBalancingV2::TargetGroup
-    Properties:
-      HealthCheckIntervalSeconds: 5
-      HealthCheckProtocol: HTTP
-      HealthCheckTimeoutSeconds: 3
-      HealthCheckPath: "/"
-      HealthyThresholdCount: 4
-      Matcher:
-        HttpCode: '200'
-      Port: 8080
-      Protocol: HTTP
-      Targets: []
-      UnhealthyThresholdCount: 3
-      VpcId:
-        'Fn::ImportValue': !Sub '${ParentVPCStack}-VPC'
-
-
-  SwarmSecurityGroup:
-    Type: AWS::EC2::SecurityGroup
-    Properties:
-      GroupDescription: !Sub ${AWS::StackName}
-      VpcId:
-        'Fn::ImportValue': !Sub '${ParentVPCStack}-VPC'
-
-  SecurityGroupInSSHBastion:
-    Type: 'AWS::EC2::SecurityGroupIngress'
-    Condition: HasSSHBastionSecurityGroup
-    Properties:
-      GroupId: !Ref SwarmSecurityGroup
-      IpProtocol: tcp
-      FromPort: 22
-      ToPort: 22
-      SourceSecurityGroupId:
-        'Fn::ImportValue': !Sub '${ParentSSHBastionStack}-SecurityGroup'
-
-  SecurityGroupInClusterMgmt:
-    Type: 'AWS::EC2::SecurityGroupIngress'
-    Properties:
-      GroupId: !Ref SwarmSecurityGroup
-      IpProtocol: tcp
-      FromPort: 2377
-      ToPort: 2377
-      SourceSecurityGroupId: !Ref SwarmSecurityGroup
-
-  SecurityGroupInSwarmCommunicationTcp:
-    Type: 'AWS::EC2::SecurityGroupIngress'
-    Properties:
-      GroupId: !Ref SwarmSecurityGroup
-      IpProtocol: tcp
-      FromPort: 7946
-      ToPort: 7946
-      SourceSecurityGroupId: !Ref SwarmSecurityGroup
-
-  SecurityGroupInSwarmCommunicationUdp:
-    Type: 'AWS::EC2::SecurityGroupIngress'
-    Properties:
-      GroupId: !Ref SwarmSecurityGroup
-      IpProtocol: udp
-      FromPort: 7946
-      ToPort: 7946
-      SourceSecurityGroupId: !Ref SwarmSecurityGroup
-
-  SecurityGroupInSwarmOverlayNetwork:
-    Type: 'AWS::EC2::SecurityGroupIngress'
-    Properties:
-      GroupId: !Ref SwarmSecurityGroup
-      IpProtocol: udp
-      FromPort: 4789
-      ToPort: 4789
-      SourceSecurityGroupId: !Ref SwarmSecurityGroup
-
 
   InstanceProfile:
     Type: 'AWS::IAM::InstanceProfile'
@@ -261,6 +129,16 @@ Resources:
             - 'ec2:DescribeInstances'
             Resource:
             - '*'
+      - PolicyName: kms
+        PolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+          - Effect: Allow
+            Action:
+            - 'kms:Decrypt'
+            - 'kms:DescribeKey'
+            Resource:
+            - !Ref JoinTokenKmsKey
 
   IAMPolicySSHAccess:
     Type: 'AWS::IAM::Policy'
@@ -285,7 +163,7 @@ Resources:
           - !Sub 'arn:aws:iam::${AWS::AccountId}:user/*'
 
 
-  SwarmManagerAutoScalingGroup:
+  AutoScalingGroup:
     Type: AWS::AutoScaling::AutoScalingGroup
     Properties:
       # AvailabilityZones: !Ref AvailabilityZones
@@ -293,11 +171,11 @@ Resources:
       - 'Fn::ImportValue': !Sub '${ParentVPCStack}-SubnetA${ManagerSubnetsReach}'
       - 'Fn::ImportValue': !Sub '${ParentVPCStack}-SubnetB${ManagerSubnetsReach}'
       - 'Fn::ImportValue': !Sub '${ParentVPCStack}-SubnetC${ManagerSubnetsReach}'
-      LaunchConfigurationName: !Ref SwarmManagerLaunchConfiguration
+      LaunchConfigurationName: !Ref LaunchConfiguration
       MinSize: !Ref DesiredInstances
       MaxSize: 7
       DesiredCapacity: !Ref DesiredInstances
-      TargetGroupARNs: [!Ref TargetGroup80, !Ref TargetGroup8080]
+      TargetGroupARNs: !Ref TargetGroups
       MetricsCollection:
       - Granularity: 1Minute
         Metrics:
@@ -319,7 +197,7 @@ Resources:
         WaitOnResourceSignals: 'true'
 
 
-  SwarmManagerLaunchConfiguration:
+  LaunchConfiguration:
     Type: AWS::AutoScaling::LaunchConfiguration
     Metadata:
       AWS::CloudFormation::Init:
@@ -393,27 +271,27 @@ Resources:
                 - 'a_configure_sshd_command'
                 - 'b_configure_sshd_commanduser'
 
-
-
         docker-ubuntu:
           commands:
             'a_get_certificates':
-              command: 'sudo apt-get install apt-transport-https ca-certificates'
+              command: 'sudo apt-get install apt-transport-https ca-certificates curl software-properties-common'
             'b_set_gpg_key':
-              command: 'sudo apt-key adv --keyserver hkp://ha.pool.sks-keyservers.net:80 --recv-keys 58118E89F3A912897C070ADBF76221572C52609D'
-            'c_add_docker_repo':
-              command: !If [UsePreRelease, 'echo "deb https://apt.dockerproject.org/repo ubuntu-xenial testing" | sudo tee /etc/apt/sources.list.d/docker.list', 'echo "deb https://apt.dockerproject.org/repo ubuntu-xenial main" | sudo tee /etc/apt/sources.list.d/docker.list']
-            'd_update_aptget':
+              command: 'curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo apt-key add -'
+            'c_add_fingerprint':
+              command: 'sudo apt-key fingerprint 0EBFCD88'
+            'd_add_docker_repo':
+              command: !Sub 'sudo add-apt-repository "deb [arch=amd64] https://download.docker.com/linux/ubuntu $(lsb_release -cs) ${DockerRepository}"'
+            'e_update_aptget':
               command: 'sudo apt-get update'
-            'e_install_docker':
-              command: !Sub 'sudo apt-get install -y docker-engine=${DockerVersion}-0~ubuntu-xenial'
-            'f_create_service':
+            'f_install_docker':
+              command: !Sub 'sudo apt-get install -y docker-ce=${DockerVersion}~ce-0~ubuntu-xenial'
+            'g_create_service':
               command: 'sudo service docker start'
-            'g_add_ubuntu_user_to_docker_group':
+            'h_add_ubuntu_user_to_docker_group':
               command: 'sudo usermod -aG docker ubuntu'
-            'h_verify_installation':
-              command: 'sudo docker run hello-world'
             'i_verify_installation':
+              command: 'sudo docker run hello-world'
+            'k_verify_installation':
               command: 'docker run hello-world'
         swarm-init:
           commands:
@@ -427,22 +305,26 @@ Resources:
           commands:
             'a_join_swarm':
               command: !Sub | 
-                INSTANCE_ID="`wget -q -O - http://instance-data/latest/meta-data/instance-id`"
-                ASG_NAME=$(aws autoscaling describe-auto-scaling-instances --instance-ids $INSTANCE_ID --region eu-west-1 --query AutoScalingInstances[].AutoScalingGroupName --output text)
+                # Decrypt join token via KMS
+                echo -n "${JoinToken}" | base64 --decode > ciphertextblob
+                JOIN_TOKEN=$(aws kms decrypt --region ${AWS::Region} --ciphertext-blob fileb://ciphertextblob --query Plaintext --output text | base64 --decode)
 
-                for ID in $(aws autoscaling describe-auto-scaling-groups --auto-scaling-group-names $ASG_NAME --region eu-west-1 --query AutoScalingGroups[].Instances[].InstanceId --output text);
+                INSTANCE_ID="`wget -q -O - http://instance-data/latest/meta-data/instance-id`"
+                ASG_NAME=$(aws autoscaling describe-auto-scaling-instances --instance-ids $INSTANCE_ID --region ${AWS::Region} --query AutoScalingInstances[].AutoScalingGroupName --output text)
+
+                for ID in $(aws autoscaling describe-auto-scaling-groups --auto-scaling-group-names $ASG_NAME --region ${AWS::Region} --query AutoScalingGroups[].Instances[].InstanceId --output text);
                 do
                   # Ignore "myself"
                   if [ "$ID" == "$INSTANCE_ID" ] ; then
                       continue;
                   fi
 
-                  IP=$(aws ec2 describe-instances --instance-ids $ID --region eu-west-1 --query Reservations[].Instances[].PrivateIpAddress --output text)
+                  IP=$(aws ec2 describe-instances --instance-ids $ID --region ${AWS::Region} --query Reservations[].Instances[].PrivateIpAddress --output text)
                   if [ ! -z "$IP" ] ; then
                     echo "Try to join swarm with IP $IP"
 
                     # Join the swarm; if it fails try the next one
-                    docker swarm join --token ${SwarmManagerJoinToken} $IP:2377 && break || continue
+                    docker swarm join --token $JOIN_TOKEN $IP:2377 && break || continue
                   fi
                 done
 
@@ -453,9 +335,7 @@ Resources:
     Properties:
       ImageId: ami-6f587e1c # Use Ubuntu to install latest docker-engine
       InstanceType: !Ref InstanceType
-      SecurityGroups:
-      - !Ref SwarmSecurityGroup
-      - !Ref SecurityGroup
+      SecurityGroups: !Ref SecurityGroups
 
       IamInstanceProfile: !Ref InstanceProfile
       KeyName: !If [HasKeyName, !Ref KeyName, !Ref 'AWS::NoValue']
@@ -477,24 +357,13 @@ Resources:
           easy_install https://s3.amazonaws.com/cloudformation-examples/aws-cfn-bootstrap-latest.tar.gz
           ln -s /root/aws-cfn-bootstrap-latest/init/ubuntu/cfn-hup /etc/init.d/cfn-hup
 
-          # TODO: Replace by build-number. Needed to trigger ASG update process.
-          echo "1"
+          echo "${Version}"
 
-          cfn-init -v --region ${AWS::Region} --stack ${AWS::StackName} --resource SwarmManagerLaunchConfiguration 
-          cfn-signal -e $? --region ${AWS::Region} --stack ${AWS::StackName} --resource SwarmManagerAutoScalingGroup
+          cfn-init -v --region ${AWS::Region} --stack ${AWS::StackName} --resource LaunchConfiguration 
+          cfn-signal -e $? --region ${AWS::Region} --stack ${AWS::StackName} --resource AutoScalingGroup
 
 Outputs:
-  SwarmSecurityGroup:
-    Description: 'Use this Security Group to reference traffic across Docker Swarm.'
-    Value: !Ref SwarmSecurityGroup
-    Export:
-      Name: !Sub '${AWS::StackName}-SwarmSecurityGroup'
-  SwarmManagerAutoScalingGroup:
+  AutoScalingGroup:
     Description: 'Use this AutoScaling Group to identify Swarm Managers.'
-    Value: !Ref SwarmManagerAutoScalingGroup
-    Export:
-      Name: !Sub '${AWS::StackName}-SwarmManagerAutoScalingGroup'
-  ServiceUrl:
-    Description: URL of the load balancer for the sample service.
-    Value: !Sub http://${LoadBalancer.DNSName}
+    Value: !Ref AutoScalingGroup
 

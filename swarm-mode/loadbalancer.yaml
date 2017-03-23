@@ -1,0 +1,136 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Docker Swarm - LoadBalancer'
+
+Parameters:
+  
+  ParentVPCStack:
+    Description: 'Stack name of parent VPC stack based on vpc/vpc-*azs.yaml template.'
+    Type: String
+
+
+Resources:
+
+  SecurityGroup:
+    Type: AWS::EC2::SecurityGroup		
+    Properties:
+      GroupDescription: Allow http to client host
+      VpcId:
+        'Fn::ImportValue': !Sub '${ParentVPCStack}-VPC'
+      SecurityGroupIngress:
+      - IpProtocol: tcp		
+        FromPort: '5000'
+        ToPort: '5000'
+        CidrIp: 0.0.0.0/0
+      - IpProtocol: tcp		
+        FromPort: '5001'
+        ToPort: '5001'
+        CidrIp: 0.0.0.0/0
+      - IpProtocol: tcp
+        FromPort: '8080'
+        ToPort: '8080'
+        CidrIp: 0.0.0.0/0
+
+  LoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Scheme: internet-facing
+      Subnets:
+      - 'Fn::ImportValue': !Sub '${ParentVPCStack}-SubnetAPublic'
+      - 'Fn::ImportValue': !Sub '${ParentVPCStack}-SubnetBPublic'
+      - 'Fn::ImportValue': !Sub '${ParentVPCStack}-SubnetCPublic'
+      SecurityGroups:
+      - !Ref SecurityGroup
+
+  Listener5000:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      DefaultActions:
+      - Type: forward		
+        TargetGroupArn: !Ref TargetGroup5000
+      LoadBalancerArn: !Ref LoadBalancer
+      Port: '5000'
+      Protocol: HTTP
+
+  TargetGroup5000:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      HealthCheckIntervalSeconds: 5
+      HealthCheckProtocol: HTTP
+      HealthCheckTimeoutSeconds: 3
+      HealthCheckPath: "/"
+      HealthyThresholdCount: 4
+      Matcher:
+        HttpCode: '200'
+      Port: 5000
+      Protocol: HTTP
+      Targets: []
+      UnhealthyThresholdCount: 3
+      VpcId:
+        'Fn::ImportValue': !Sub '${ParentVPCStack}-VPC'
+
+  Listener5001:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      DefaultActions:
+      - Type: forward		
+        TargetGroupArn: !Ref TargetGroup5001
+      LoadBalancerArn: !Ref LoadBalancer
+      Port: '5001'
+      Protocol: HTTP
+
+  TargetGroup5001:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      HealthCheckIntervalSeconds: 5
+      HealthCheckProtocol: HTTP
+      HealthCheckTimeoutSeconds: 3
+      HealthCheckPath: "/"
+      HealthyThresholdCount: 4
+      Matcher:
+        HttpCode: '200'
+      Port: 5001
+      Protocol: HTTP
+      Targets: []
+      UnhealthyThresholdCount: 3
+      VpcId:
+        'Fn::ImportValue': !Sub '${ParentVPCStack}-VPC'
+
+  Listener8080:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      DefaultActions:
+      - Type: forward
+        TargetGroupArn: !Ref TargetGroup8080
+      LoadBalancerArn: !Ref LoadBalancer
+      Port: '8080'
+      Protocol: HTTP
+
+  TargetGroup8080:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      HealthCheckIntervalSeconds: 5
+      HealthCheckProtocol: HTTP
+      HealthCheckTimeoutSeconds: 3
+      HealthCheckPath: "/"
+      HealthyThresholdCount: 4
+      Matcher:
+        HttpCode: '200'
+      Port: 8080
+      Protocol: HTTP
+      Targets: []
+      UnhealthyThresholdCount: 3
+      VpcId:
+        'Fn::ImportValue': !Sub '${ParentVPCStack}-VPC'
+
+
+Outputs:
+
+  TargetGroups:
+    Value: !Join [',', [!Ref TargetGroup5000, !Ref TargetGroup5001, !Ref TargetGroup8080]]
+
+  ServiceUrl:
+    Description: URL of the load balancer.
+    Value: !Sub http://${LoadBalancer.DNSName}
+
+  SecurityGroup:
+    Value: !Ref SecurityGroup

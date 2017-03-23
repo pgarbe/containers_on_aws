@@ -1,0 +1,113 @@
+Description: >
+  Docker Swarm Cluster
+
+
+Parameters:
+
+  SwarmManagerJoinToken:
+    Description: 'The token to join the swarm cluster as a manager node'
+    Type: String
+    Default: ''
+    NoEcho: true
+
+  SwarmWorkerJoinToken:
+    Description: 'The token to join the swarm cluster as a worker node'
+    Type: String
+    Default: ''
+    NoEcho: true
+
+  DesiredManagerInstances:
+    Description: 'The number of manager nodes'
+    Type: Number
+    Default: 3
+    AllowedValues: [1,3,5,7]
+
+  DesiredWorkerInstances:
+    Description: 'The number of worker nodes'
+    Type: Number
+    Default: 1
+  
+  KeyName:
+    Description: 'Optional key pair of the ec2-user to establish a SSH connection to the EC2 instance.'
+    Type: String
+    Default: ''
+
+  Version:
+    Description: 'Specifiy version to trigger a re-deployment of launch configuration'
+    Type: String
+
+Conditions:
+  HasManagerJoinToken: !Not [!Equals [!Ref SwarmManagerJoinToken, '']]
+  HasWorkerJoinToken: !Not [!Equals [!Ref SwarmWorkerJoinToken, '']]
+
+
+Resources:
+  Vpc:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: https://s3.amazonaws.com/widdix-aws-cf-templates/vpc/vpc-3azs.yaml
+
+  Bastion:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: https://s3.amazonaws.com/widdix-aws-cf-templates/vpc/vpc-ssh-bastion.yaml
+      Parameters:
+        ParentVPCStack: !Select [1, !Split ['/', !Ref Vpc]] # Workaround to get the stack name
+        KeyName: !Ref KeyName
+
+  SecurityGroups:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: !Sub https://s3.amazonaws.com/${AWS::StackName}/securitygroups.yaml
+      Parameters:
+        ParentVPCStack: !Select [1, !Split ['/', !Ref Vpc]] # Workaround to get the stack name
+        ParentSSHBastionStack: !Select [1, !Split ['/', !Ref Bastion]]
+
+  Kms:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: !Sub https://s3.amazonaws.com/${AWS::StackName}/kms.yaml
+
+  Manager:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: !Sub https://s3.amazonaws.com/${AWS::StackName}/manager.yaml
+      Parameters:
+        ParentVPCStack: !Select [1, !Split ['/', !Ref Vpc]]
+        KeyName: !Ref KeyName
+        Version: !Ref Version
+        SecurityGroups: !Join [',', [!GetAtt SecurityGroups.Outputs.SecurityGroup, !GetAtt LoadBalancer.Outputs.SecurityGroup]]
+        JoinToken: !Ref SwarmManagerJoinToken
+        DesiredInstances: !If [HasManagerJoinToken, !Ref DesiredManagerInstances, 1]
+        JoinTokenKmsKey: !GetAtt Kms.Outputs.SwarmTokenKeyArn
+        TargetGroups: !GetAtt LoadBalancer.Outputs.TargetGroups
+
+  Worker:
+    Condition: HasWorkerJoinToken
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: !Sub https://s3.amazonaws.com/${AWS::StackName}/worker.yaml
+      Parameters:
+        ParentVPCStack: !Select [1, !Split ['/', !Ref Vpc]]
+        SwarmManagerAutoScalingGroup: !GetAtt Manager.Outputs.AutoScalingGroup
+        SecurityGroups: !Join [',', [!GetAtt SecurityGroups.Outputs.SecurityGroup, !GetAtt LoadBalancer.Outputs.SecurityGroup]]
+        JoinToken: !Ref SwarmWorkerJoinToken
+        JoinTokenKmsKey: !GetAtt Kms.Outputs.SwarmTokenKeyArn
+        KeyName: !Ref KeyName
+        DesiredInstances: !Ref DesiredWorkerInstances
+        Version: !Ref Version
+        TargetGroups: !GetAtt LoadBalancer.Outputs.TargetGroups
+
+  LoadBalancer:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: !Sub https://s3.amazonaws.com/${AWS::StackName}/loadbalancer.yaml
+      Parameters:
+        ParentVPCStack: !Select [1, !Split ['/', !Ref Vpc]] # Workaround to get the stack name
+
+
+# Outputs:
+
+#   ServiceUrl:
+#     Description: URL of the load balancer for the sample service.
+#     Value: !Sub http://${LoadBalancer.DNSName}

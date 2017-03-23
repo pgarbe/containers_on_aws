@@ -1,0 +1,83 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Docker Swarm - SecurityGroups'
+
+
+Parameters:
+
+  ParentVPCStack:
+    Description: 'Stack name of parent VPC stack based on vpc/vpc-*azs.yaml template.'
+    Type: String
+
+  ParentSSHBastionStack:
+    Description: 'Optional Stack name of parent SSH bastion host/instance stack based on vpc/vpc-ssh-bastion.yaml template.'
+    Type: String
+    Default: ''
+
+
+Conditions:
+
+  HasSSHBastionSecurityGroup: !Not [!Equals [!Ref ParentSSHBastionStack, '']]
+
+
+Resources:
+
+  SwarmSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: !Sub ${AWS::StackName}
+      VpcId:
+        'Fn::ImportValue': !Sub '${ParentVPCStack}-VPC'
+
+  SecurityGroupInSSHBastion:
+    Type: 'AWS::EC2::SecurityGroupIngress'
+    Condition: HasSSHBastionSecurityGroup
+    Properties:
+      GroupId: !Ref SwarmSecurityGroup
+      IpProtocol: tcp
+      FromPort: 22
+      ToPort: 22
+      SourceSecurityGroupId: 
+        'Fn::ImportValue': !Sub '${ParentSSHBastionStack}-SecurityGroup'
+
+  SecurityGroupInClusterMgmt:
+    Type: 'AWS::EC2::SecurityGroupIngress'
+    Properties:
+      GroupId: !Ref SwarmSecurityGroup
+      IpProtocol: tcp
+      FromPort: 2377
+      ToPort: 2377
+      SourceSecurityGroupId: !Ref SwarmSecurityGroup
+
+  SecurityGroupInSwarmCommunicationTcp:
+    Type: 'AWS::EC2::SecurityGroupIngress'
+    Properties:
+      GroupId: !Ref SwarmSecurityGroup
+      IpProtocol: tcp
+      FromPort: 7946
+      ToPort: 7946
+      SourceSecurityGroupId: !Ref SwarmSecurityGroup
+
+  SecurityGroupInSwarmCommunicationUdp:
+    Type: 'AWS::EC2::SecurityGroupIngress'
+    Properties:
+      GroupId: !Ref SwarmSecurityGroup
+      IpProtocol: udp
+      FromPort: 7946
+      ToPort: 7946
+      SourceSecurityGroupId: !Ref SwarmSecurityGroup
+
+  SecurityGroupInSwarmOverlayNetwork:
+    Type: 'AWS::EC2::SecurityGroupIngress'
+    Properties:
+      GroupId: !Ref SwarmSecurityGroup
+      IpProtocol: udp
+      FromPort: 4789
+      ToPort: 4789
+      SourceSecurityGroupId: !Ref SwarmSecurityGroup
+
+
+Outputs:
+
+  SecurityGroup:
+    Description: Security group for internal swarm communication
+    Value: !Ref SwarmSecurityGroup
