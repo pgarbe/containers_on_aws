@@ -4,7 +4,7 @@ This repository contains some practical examples how to run containers on AWS. I
 
 ## Basic setup
 
-In order to run the different kind of clusters we need a basic setup (like VPC). There are some very good templates [available](https://github.com/widdix/aws-cf-templates/tree/master/vpc) from [Cloudonout](https://cloudonout.io) which I want to reuse.
+In order to run the different kind of clusters we need a basic setup (like VPC). There are some very good templates [available](https://github.com/widdix/aws-cf-templates/tree/master/vpc) from [Cloudonaut](https://cloudonaut.io) which I want to reuse.
 
 
 ```bash
